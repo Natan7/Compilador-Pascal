@@ -19,7 +19,7 @@ parser code {:
 init with {:
   ComplexSymbolFactory f = new ComplexSymbolFactory();
   symbolFactory = f;
-  File file = new File("input.txt");
+  File file = new File("entrada/input.txt");
   FileInputStream fis = null;
   try {
     fis = new FileInputStream(file);
@@ -31,7 +31,7 @@ init with {:
 scan with {: return lexer.next_token(); :};
 
 /* Terminals (tokens returned by the scanner). */
-terminal            SEMI, PLUS, MINUS, UMINUS, TIMES, LPAREN, RPAREN;
+terminal            SEMICOLON, PLUS, MINUS, UMINUS, TIMES, LPARENT, RPARENT;
 terminal Integer    NUMBER;        // our scanner provides numbers as integers
 
 /* Non terminals */
@@ -41,11 +41,11 @@ non terminal Integer    expr;      // used to store evaluated subexpressions
 /* Precedences */
 precedence left PLUS, MINUS;
 precedence left TIMES;
-precedence left UMINUS;
+
 
 /* The grammar rules */
-expr_list ::= expr_list expr:e SEMI         {: System.out.println(e); :}
-            | expr:e SEMI                   {: System.out.println(e); :}
+expr_list ::= expr_list expr:e SEMICOLON        {: System.out.println(e); :}
+            | expr:e SEMICOLON                   {: System.out.println(e); :}
             ;
             
 expr      ::= expr:e1 PLUS  expr:e2         {: RESULT = e1+e2;        :}
@@ -53,7 +53,7 @@ expr      ::= expr:e1 PLUS  expr:e2         {: RESULT = e1+e2;        :}
              | expr:e1 TIMES expr:e2        {: RESULT = e1*e2;        :}
              | MINUS expr:e                 {: RESULT = -e;           :}
              %prec UMINUS
-             | LPAREN expr:e RPAREN	         {: RESULT = e;           :}
+             | LPARENT expr:e RPARENT	         {: RESULT = e;           :}
              | NUMBER:n	                     {: RESULT = n;           :}
              ;
        
