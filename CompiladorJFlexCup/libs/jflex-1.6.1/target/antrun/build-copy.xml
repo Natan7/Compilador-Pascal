@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<project name="maven-antrun-" default="copy"  >
+<target name="copy">
+  <copy file="/home/johanny/NetBeansProjects/CompiladorJFlexCup/libs/jflex-1.6.1/target/jflex-1.6.1.jar" todir="lib"/>
+</target>
+</project>

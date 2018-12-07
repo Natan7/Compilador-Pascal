@@ -1,0 +1,838 @@
+/*------------- 1a Area: Codigo do Usuario -------------*/
+
+//--------------> Pacotes, Importacoes
+package analisadores;
+import java_cup.runtime.*;
+import java.io.*;
+import java.util.*;
+import util.SemanticManager;
+import util.Objeto;
+
+//--------------> Codigo para parser, variaveis e metodos
+parser code {:
+
+    public void report_error(String message, Object info) {
+        StringBuilder m = new StringBuilder("Error");
+        if (info instanceof java_cup.runtime.Symbol) {
+            java_cup.runtime.Symbol s = ((java_cup.runtime.Symbol) info);
+            if (s.left >= 0) {                
+                m.append(" in line "+(s.left+1));   
+                if (s.right >= 0)                    
+                    m.append(", column "+(s.right+1));
+            }
+        }
+        m.append(" : "+message);
+        System.err.println(m);
+    }
+   
+    public void report_fatal_error(String message, Object info) {
+        report_error(message, info);
+        System.exit(1);
+    }
+
+:};
+
+/********************************************************/
+/*---------------- 2a Area: Declaracoes ----------------*/
+/********************************************************/
+
+//------------> Terminais
+
+terminal           AND, OR, NOT, TRUE, FALSE; // boolean
+
+terminal PROGRAM, LABEL, CONST, TYPE, VAR, FORWARD, BEGIN, END,
+         PACKED, OF, EXTERNAL, EXIT;
+
+// flow
+terminal           IF, THEN, ELSE; 
+terminal           WHILE, DO, TO, CASE, WITH; 
+
+terminal           NIL, DIVEXTENSION;
+terminal           RECORD, SET, FILE;
+
+terminal           WRITELN;  // commands
+terminal           ASSIGN; 
+terminal   	       EQ, LT, LE, GT, GE, NE; // num_rel
+
+terminal           SINGLEQUOTE, DOUBLEQUOTE, CIRCUNFLEX;
+
+terminal           LETTER, STRINGCHARACTER, SCALEFACTOR, IN;
+
+terminal           COLON, SEMI, COMMA, PLUS, MINUS, TIMES, DIV, MOD, LPARENT, RPARENT, DOT, DOUBLEDOT, LBRACKET, RBRACKET;
+terminal Integer   NUM; //DIGITSEQUENCE
+terminal String    IDENTIFIER;
+terminal String    STRING;
+
+
+/** Non-terminals 
+non terminal Expr expr;
+non terminal Expr num_expr;
+non terminal Expr str_expr;
+non terminal Expr bool_expr;
+
+non terminal Operator num_op;
+non terminal Condition num_rel;
+non terminal Condition str_rel;
+
+non terminal SimpleInstruction simple_instr;
+non terminal InstructionList instr;
+
+non terminal SimpleInstruction assign_stat;
+non terminal SimpleInstruction if_stat;
+non terminal SimpleInstruction while_stat;
+non terminal SimpleInstruction output_stat;
+non terminal Main program;
+*/
+//---------------> Nao-terminais
+
+non terminal program, program_heading, block, stmt_seq, identifier_list, 
+             declr_part, stmt_part, label_declr_part, const_def_part, type_def_part,
+             var_declr_part, label, record_declr, record_declr_opt;
+
+non terminal const_def, constant, type_def, var_declr, var_identifier, directive, compiler_defined_directive;
+
+non terminal formal_param_list, element_list, result_type, type, identifier, identifier_closure,
+             type_identifier, const_identifier, bound_identifier, field_identifier, formal_param_section,
+             val_param_section, var_param_section, function_parameter_section, param_type;
+
+non terminal bound_spec, bound_identifier_prod, bound_digit_seq_prod, ordinal_type_identifier_opt, ordinal_type_identifier; 
+
+non terminal stmt, simple_stmt, structured_stmt, assigment_statement, var, expr, expr_while, bool, true, false, expr_list, 
+             actual_variable, actual_value, actual_param, actual_param_list, compound_stmt, repetitive_stmt, conditional_stmt,
+             with_stmt, while_stmt;
+
+non terminal initial_expr, simple_expr, final_expr, assign_stmt, case_statement, case_limb, case_label_list;
+
+non terminal relop, plus_minus_op, times_div_op;
+
+non terminal set, simple_type, structured_type, pointer_type, subrange_type, enumerated_type, unpacked_structured_type, 
+             record_type, set_type, file_type, index_type, element_type, base_type, file_component_type;
+
+non terminal fixed_part, variant_part;
+
+non terminal field_list, field_list_aux, tag_field, field_width, variant, output_value, fraction_lenght;
+
+non terminal lower_bound, upper_bound;
+
+non terminal record_section;
+
+non terminal field_designator, entire_var, component_variable, ref_var, record_var, file_var, pointer_variable;
+
+non terminal number, integer_number, real_number;
+
+non terminal digit, digit_sequence, unsigned_digit_sequence, unsigned_digit_sequence_optional;
+
+non terminal string, string_character;
+
+non terminal sign, sign_opt, term, factor, char, letter, fraction_length, file_buffer, scale_factor, args_opt, 
+             scale_factor_optional, colon_fraction_length, semi_field_width, identifier_colon, packed_opt, semi_opt, 
+             semi_variant_part, compiler_def_direct, any_character_except_quote, actual_param_list_opt, relop_simple_expr, 
+             simple_stmt_opt, label_colon, formal_param_list_opt, label_declr_part_opt, const_def_part_opt, type_def_part_opt, 
+             var_declr_part_opt, boolean_op, boolean_expr;
+
+non terminal constant_identifier_or_number, var_funct_ident;
+
+non terminal comma_var, comma_identifier, comma_expr, comma_output_value, comma_const, comma_record_var, comma_actual_param, comma_label;
+
+non terminal semi_record_section, semi_variant, semi_colon_case_limb, semi_stmt, semi_bound_spec, semi_formal_param_section;
+
+non terminal colon_index_type, times_op_factor, plus_op_term;
+
+non terminal var_declr_semi, type_def_semi, const_def_semi;
+
+/** Precedence */
+precedence left PLUS, MINUS;
+precedence left TIMES, DIV, MOD; 
+
+precedence left OR, AND;
+precedence left NOT;
+
+precedence left ELSE;
+
+start with program;
+
+/********************************************************/
+/*------------- 3a Area: Regras Semanticas -------------*/
+/********************************************************/
+
+program ::= program_heading block DOT
+          ;
+
+program_heading ::= PROGRAM identifier args_opt SEMI
+                  ;
+
+args_opt ::= LPARENT identifier_list RPARENT 
+                     | 
+                     ;
+
+block ::= declr_part stmt_part
+        ;
+
+declr_part ::= label_declr_part_opt const_def_part_opt type_def_part_opt var_declr_part_opt record_declr_opt
+             ;
+
+label_declr_part ::= LABEL:le label:lid comma_label SEMI {:  if (le != null) { SemanticManager.getInstance().lineError = ((int) le); } 
+                                                             if (lid != null) { SemanticManager.getInstance().addLabel(Integer.parseInt(lid.toString())); }  :}
+                   ;
+		
+comma_label ::= COMMA:c label:lid2 comma_label {:  if (c != null) { SemanticManager.getInstance().lineError = ((int) c); } 
+		                                           if (lid2 != null) { SemanticManager.getInstance().addLabel(Integer.parseInt(lid2.toString())); }  :} 
+              | 
+              ;
+
+label_declr_part_opt ::= label_declr_part 
+                       | 
+                       ;
+
+const_def_part ::= CONST const_def SEMI const_def_semi
+                 ;
+
+const_def_semi ::= const_def SEMI const_def_semi 
+                 | 
+                 ;
+
+const_def_part_opt ::= const_def_part 
+                     | 
+                     ;
+
+const_def ::= identifier EQ constant
+            ;
+
+type_def_part ::= TYPE type_def SEMI type_def_semi
+                ;
+
+type_def_semi ::= type_def SEMI type_def_semi 
+              | 
+              ;
+
+type_def_part_opt ::= type_def_part 
+                    | 
+                    ; 
+
+type_def ::= identifier EQ type
+           ;
+
+var_declr_part ::= VAR:va var_declr:var SEMI var_declr_semi {: if (va != null){ SemanticManager.getInstance().lineError = ((int) va); } 
+                                                               if (var != null) { System.out.println("VARIABLE DECLARATION PART: " + var); RESULT = var; } :} 
+                 
+                 | VAR:va var_declr:var SEMI var_declr_semi {: if (va != null) { SemanticManager.getInstance().lineError = ((int) va); } 
+                                                               if (var != null) { System.out.println("VARIABLE DECLARATION PART: " + var); RESULT = var;} :} 
+                   declr_part;
+		
+var_declr_semi ::= var_declr SEMI var_declr_semi 
+                 | 
+                 ; 
+
+var_declr_part_opt ::= var_declr_part 
+                     | 
+                     ;
+
+var_declr ::= identifier_list:il COLON type:tp  {: if (il != null) { System.out.println("VARIABLE DECLARATION : " + il); RESULT = il; }
+	                                               if (tp != null) { SemanticManager.getInstance().addIdentifier(il.toString());
+	   	                                                             SemanticManager.getInstance().addVariable(il.toString(), tp.toString(), "null"); } :}
+            ;
+
+record_declr ::= TYPE identifier_list:il EQ RECORD field_list END SEMI
+               ;
+
+record_declr_opt ::= record_declr 
+                   | 
+                   ;
+
+
+directive ::= FORWARD 
+            | compiler_def_direct
+            ;
+
+stmt_part ::= BEGIN stmt_seq END
+            ;
+
+compiler_def_direct ::= EXTERNAL
+                      ;
+
+/***************************************/
+/* PRCEDURES AND FUNCTIONS DEFINITIONS */
+/***************************************/
+
+result_type ::= type_identifier:rt {: if (rt != null) { System.out.println("result type : " + rt); RESULT = rt; } :}
+              ;
+
+formal_param_list ::= LPARENT formal_param_section RPARENT
+                    ;
+
+semi_formal_param_section ::= SEMI formal_param_section semi_formal_param_section 
+                            | 
+                            ;
+
+formal_param_list_opt ::= formal_param_list 
+                        | 
+                        ;
+
+formal_param_section ::= val_param_section 
+                       | var_param_section 
+                       ;
+
+val_param_section ::= identifier_list COLON param_type
+                    ;
+
+var_param_section ::= VAR identifier_list COLON param_type
+                    ;
+
+param_type ::= type_identifier:ti {: if (ti != null) { System.out.println("type identifier: " + ti); RESULT = ti; } :}
+             ;
+
+semi_bound_spec ::= SEMI bound_spec semi_bound_spec 
+                  | 
+                  ;
+
+bound_spec ::= bound_identifier_prod:bip            {: if (bip != null) { RESULT = bip;} :} 
+             | bound_digit_seq_prod:bds             {: if (bds != null) { RESULT = bds;} :}
+             ;
+
+bound_identifier_prod ::= identifier:id DOUBLEDOT identifier:id1 ordinal_type_identifier_opt {: if (id != null && id1 !=null) { System.out.println("identifier:id: " + id);
+															                                                                   System.out.println("identifier:id: " + id1);
+															                                                                   SemanticManager.getInstance().addIdentifier(id.toString());
+															                                                                   SemanticManager.getInstance().addIdentifier(id1.toString()); }  :}
+                        ;
+
+bound_digit_seq_prod ::= NUM DOUBLEDOT NUM ordinal_type_identifier_opt
+                       ;
+
+ordinal_type_identifier_opt ::= COLON ordinal_type_identifier 
+                              | 
+                              ;
+
+ordinal_type_identifier ::= type_identifier
+                          ;
+
+/***************************************/
+/************* STATEMENTS **************/
+/***************************************/
+
+stmt_seq ::= stmt semi_stmt
+           ;
+
+semi_stmt ::= SEMI stmt semi_stmt 
+            | 
+            ;
+
+stmt ::= simple_stmt 
+       | structured_stmt
+       ;
+
+label_colon ::= label COLON 
+              | 
+              ;
+
+simple_stmt ::= simple_stmt_opt 
+              | 
+              ;
+
+simple_stmt_opt ::= assign_stmt
+                  ;
+
+assign_stmt ::= var_funct_ident ASSIGN expr
+              ;
+
+var_funct_ident ::= var 
+                  ;
+
+structured_stmt ::= compound_stmt 
+                  | repetitive_stmt 
+                  | conditional_stmt 
+                  | with_stmt
+                  ;
+
+compound_stmt ::= BEGIN stmt_seq END
+                ;
+
+repetitive_stmt ::= while_stmt
+                  ;
+
+while_stmt ::= WHILE:w expr_while:expw DO stmt {: System.out.println("WHILE: " + expw + "teste"+w);
+												  if (w != null) { SemanticManager.getInstance().lineError = ((int) w); } 
+                                                  if (expw != null) { SemanticManager.getInstance().checkWhileExpression(expw.toString()); } :}
+             ;
+
+initial_expr ::= expr
+               ;
+
+final_expr ::= expr
+             ;
+
+comma_const ::= COMMA constant comma_const 
+              | 
+              ;
+
+with_stmt ::= WITH record_var comma_record_var DO stmt
+            ;
+
+comma_record_var ::= COMMA record_var comma_record_var 
+                   | 
+                   ;
+
+actual_param_list ::= LPARENT actual_param comma_actual_param RPARENT
+                    ;
+
+comma_actual_param ::= COMMA actual_param comma_actual_param
+                     | 
+                     ;
+
+actual_param ::= actual_value 
+               | actual_variable
+               ;
+
+actual_value ::= expr
+               ;
+
+
+/***************************************/
+/************* EXPRESSIONS *************/
+/***************************************/
+
+expr_while ::= TRUE:var1  {: RESULT = "boolean"; :} 
+             | FALSE:var2 {: RESULT = "boolean"; :} 
+             | expr:exp   {: RESULT = exp;       :}
+             ;
+
+boolean_expr ::= bool:bol1 boolean_op bool:bol2 {: RESULT = "boolean"; :}
+               ;
+
+boolean_op ::= AND:and {: RESULT = new Objeto("and", "boolean", "and" , (int) and); :} 
+             | OR:or   {: RESULT = new Objeto("or", "boolean", "or" , (int) or); :}
+             ;
+
+expr ::= boolean_expr:bexp {: System.out.println("bexp= "+ bexp); 
+ 	                          if (bexp != null) { RESULT = bexp; } :} 
+       | true:var1         {: RESULT = "boolean"; :} 
+       | false:var2        {: RESULT = "boolean"; :} 
+       | simple_expr:sexp  {: System.out.println("simple expression= " + sexp); RESULT = "integer"; :}
+       ;
+										
+relop_simple_expr ::= relop:relop simple_expr:sexp {: System.out.println("RELOP: " + ((Objeto) relop).getId()); 
+													  if (relop != null) { SemanticManager.getInstance().lineError = ((Objeto) relop).getLineError(); } 
+                                                      if (sexp != null) { SemanticManager.getInstance().checkBooleanExpression(sexp.toString()); } :} 
+                    | 
+                    ;
+
+
+simple_expr ::= sign_opt term:ter plus_op_term;
+
+plus_op_term ::= plus_minus_op term plus_op_term 
+               | 
+               ;
+
+term ::= factor times_op_factor
+       ;
+
+times_op_factor ::= times_div_op factor times_op_factor 
+                  | 
+                  ;
+
+factor ::= var:vari   {: if (vari != null) { RESULT = vari;} :} 
+         | number:n   {: System.out.println("numero "+n); if (n != null) { RESULT = n;} :} 
+         | string:str {: if (str != null) { RESULT = "string"; } :} 
+         | set | NIL  {: RESULT = "nil"; :} 
+         | const_identifier | bound_identifier | LPARENT expr:exp RPARENT {: if (exp != null) { RESULT = exp; } :} 
+         | NOT:not    {: RESULT = new Objeto("not", "boolean", "not" , (int) not); :} 
+         factor
+         ;
+
+var ::= entire_var:ev          {: if (ev != null) { System.out.println("entire var: " + ev); RESULT = ev; } :}  
+      | component_variable:cv  {: if (cv != null) { System.out.println("component var: " + cv); RESULT = cv;} :} 
+      | ref_var:rv             {: if (rv != null) { System.out.println("referenced var: " + rv); RESULT = rv;} :}
+      ;
+
+entire_var ::= var_identifier:vi   {: if (vi != null) {RESULT = vi;} :} 
+             | field_identifier:fi {: if (fi != null) {RESULT = fi;}:}
+             ;
+
+component_variable ::= field_designator:fd {: if (fd != null) {RESULT = fd;} :} 
+                     | file_buffer:fb      {: if (fb != null) {RESULT = fb;} :}
+                     ;
+
+field_designator ::= record_var DOT field_identifier
+                   ;
+
+set ::= LBRACKET element_list RBRACKET
+      ;
+
+element_list ::= expr comma_expr 
+               | 
+               ;
+
+actual_param_list_opt ::= actual_param_list 
+                        | 
+                        ;
+
+file_buffer ::= file_var CIRCUNFLEX
+              ;
+
+/***************************************/
+/***************** TYPES ***************/
+/***************************************/
+
+type ::= simple_type 
+       | structured_type 
+       | pointer_type 
+       | type_identifier
+       ;
+
+simple_type ::= subrange_type 
+              | enumerated_type
+              ;
+
+enumerated_type ::= LPARENT identifier_list RPARENT
+                  ;
+
+subrange_type ::= lower_bound DOUBLEDOT upper_bound
+                ;
+
+lower_bound ::= constant
+              ;
+
+upper_bound ::= constant
+              ;
+
+structured_type ::= packed_opt unpacked_structured_type
+                  ;
+
+packed_opt ::= PACKED 
+             | 
+             ;
+
+unpacked_structured_type ::= record_type 
+                           | set_type 
+                           | file_type
+                           ;
+
+colon_index_type ::= COLON index_type colon_index_type 
+                   | 
+                   ;
+
+index_type ::= simple_type
+             ;
+
+element_type ::= type
+               ;
+
+record_type ::= RECORD field_list END
+              ;
+
+/***************************************/
+/*********** RECORD FIELDS *************/
+/*********** == ESCOPO == **************/
+/***************************************/
+
+field_list ::= field_list_aux semi_opt 
+             | 
+             ;
+
+field_list_aux ::= fixed_part semi_variant_part 
+                 | variant_part
+                 ;
+
+semi_opt ::= SEMI 
+           | 
+           ;
+
+semi_variant_part ::= SEMI variant_part 
+                    | 
+                    ;
+
+fixed_part ::= record_section semi_record_section
+             ;
+
+semi_record_section ::= SEMI record_section semi_record_section 
+                      | 
+                      ;
+
+record_section ::= identifier_list COLON type
+                 ;
+
+variant_part ::= CASE tag_field type_identifier OF variant semi_variant
+               ;
+
+semi_variant ::= SEMI variant semi_variant 
+               | 
+               ;
+
+tag_field ::= identifier_colon
+            ;
+
+identifier_colon ::= semi_field_width 
+                   | 
+                   ;
+
+variant ::= case_label_list COLON LPARENT field_list RPARENT
+          ;
+
+/***************************************/
+/************ INPUT/OUTPUT *************/
+/***************************************/
+
+output_list ::= output_value comma_output_value
+              ;
+
+comma_output_value ::= COMMA output_value comma_output_value 
+                     | 
+                     ;
+
+output_value ::= expr semi_field_width
+               ;
+
+semi_field_width ::= SEMI field_width colon_fraction_length 
+                   | 
+                   ;
+
+colon_fraction_length ::= COLON fraction_length 
+                        | 
+                        ;
+
+field_width ::= expr
+              ;
+
+fraction_length ::= expr
+                  ;
+
+/***************************************/
+/* VARIABLES AND IDENTIFIER CATEGORIES */
+/***************************************/
+
+file_var ::= var:var {: System.out.println("file var: " + var); 
+                        if (var != null) {RESULT = new Objeto(var.toString(), var.toString(), var ,  -1);} :} 
+           ;
+
+ref_var ::= pointer_variable:var {: System.out.println("referenced var: " + var); 
+                                    if (var != null) {RESULT = new Objeto(var.toString(), var.toString(), var , -1);} :} 
+          CIRCUNFLEX
+          ;
+
+record_var ::= var:var {: System.out.println("record var: " + var); 
+                          if (var != null) {RESULT = new Objeto(var.toString(), var.toString(), var , -1);} :}
+             ;
+
+pointer_variable ::= var:var {: System.out.println("pointer var: " + var); 
+                                if (var != null) {RESULT = new Objeto(var.toString(), var.toString(), var , -1);} :}
+                   ;
+
+actual_variable ::= var:var {: System.out.println("actual var: " + var); 
+                               if (var != null) {RESULT = new Objeto(var.toString(), var.toString(), var , -1);} :}
+                  ;
+
+field_identifier ::= identifier:id {: System.out.println("field var: " + id); 
+                                      if (id != null) {RESULT = new Objeto(id.toString(), id.toString(), id , -1);} :}
+                   ;
+
+const_identifier ::= identifier:id {: System.out.println("constant var: " + id); 
+                                      if (id != null) {RESULT = new Objeto(id.toString(), id.toString(), id , -1);} :}
+                   ;
+
+var_identifier ::= identifier:id {: System.out.println("var identifier: " + id); 
+                                    if (id != null) {RESULT = new Objeto(id.toString(), id.toString(), id , -1);} :}
+                 ;
+
+type_identifier ::= identifier:id {: System.out.println("type var: " + id); 
+                                     if (id != null) {RESULT = new Objeto(id.toString(), id.toString(), id , 0);} :}
+                  ;
+
+bound_identifier ::= identifier:id {: System.out.println("bound var: " + id); 
+                                      if (id != null) {RESULT = new Objeto(id.toString(), id.toString(), id , -1);} :}
+                   ;
+
+/***************************************/
+/****** LOW LEVEL DEFINITIONS **********/
+/***************************************/
+
+var_list ::= var comma_var COLON
+           ;
+
+identifier_list ::= identifier:id comma_identifier  {: if (id != null) { System.out.println("identifier: " + id);
+													   SemanticManager.getInstance().addIdentifier(id.toString()); }  :}
+                  ;
+
+expr_list ::= expr comma_expr
+                  ;
+
+comma_var ::= COMMA var:var comma_var {: if (var != null) { System.out.println("var: " + var);
+															SemanticManager.getInstance().addIdentifier(var.toString());
+															SemanticManager.getInstance().addVariable(var.toString(), ((Objeto) var).getTipo(), ((Objeto) var).getValor().toString());} :} 
+                 | 
+                 ;
+																 
+comma_identifier ::= COMMA identifier:id comma_identifier {: if (id != null) { System.out.println("identifier: " + id);
+																               SemanticManager.getInstance().addIdentifier(id.toString());} :} 
+                   | 
+                   ;
+
+comma_expr ::= COMMA expr:ex comma_expr {: if (ex != null) { System.out.println("expr: " + ex);
+														    SemanticManager.getInstance().lineError = (int) ex;} :} 
+             | 
+             ;
+
+
+number ::= integer_number:in {: if (in!= null) { RESULT = "integer";} :} 
+         | real_number:rn    {: if (rn!= null) { RESULT = "real";} :}
+         ;
+
+bool ::= FALSE:in {: if (in!= null) { RESULT = "boolean";} :} 
+       | TRUE:rn {: if (rn!= null) { RESULT = "boolean";} :}
+       ;
+
+integer_number ::= digit_sequence:ds {: if (ds!= null) { RESULT = ds;} :}
+                 ;
+
+real_number ::= digit_sequence DOT unsigned_digit_sequence_optional scale_factor_optional 
+              | digit_sequence scale_factor
+              ;
+
+scale_factor ::= SCALEFACTOR digit_sequence
+               ;
+
+scale_factor_optional ::= scale_factor 
+                        | 
+                        ;
+
+unsigned_digit_sequence ::= NUM:digit {: if (digit!= null) { RESULT = digit; } :}
+                          ;
+
+unsigned_digit_sequence_optional ::= unsigned_digit_sequence 
+                                   | 
+                                   ;
+
+digit_sequence ::= sign_opt:so unsigned_digit_sequence:undigit  {: if (undigit != null) { if(so != null) { RESULT = so.toString() + undigit.toString(); } 
+                                                                                          else { RESULT = undigit.toString(); } } :}
+                 ;
+
+label ::= integer_number:in {: if (in != null) { RESULT = in;} :}
+        ;
+
+constant ::= sign_opt constant_identifier_or_number 
+           | string
+           ;
+
+constant_identifier_or_number ::= const_identifier 
+                                | number
+                                ;
+
+relop ::= EQ:e      {: RESULT = new Objeto("equals", "boolean", "=" , (int) e); :} 
+        | NE:d      {: RESULT = new Objeto("diff", "boolean", "<>" , (int) d); :} 
+        | LT:lt     {: RESULT = new Objeto("lessthen", "boolean", "<" , (int) lt); :} 
+        | LE:lte    {: RESULT = new Objeto("lessthenequals", "boolean", "<=" , (int) lte); :} 
+        | GT:gt     {: RESULT = new Objeto("greaterthen", "boolean", ">" , (int) gt); :} 
+        | GE:gte    {: RESULT = new Objeto("greaterthenequals", "boolean", ">=" , (int) gte); :} 
+        | IN:in     {: RESULT = new Objeto("in", "boolean", "in" , (int) in); :}
+        ;
+
+plus_minus_op ::= PLUS:plus           {: RESULT = new Objeto("plus", "arithmetic", "+" , (int) plus); :} 
+                | MINUS:minus         {: RESULT = new Objeto("minus", "arithmetic", "-" , (int) minus); :}
+                ;
+
+times_div_op ::= TIMES:times          {: RESULT = new Objeto("times", "arithmetic", "*" , (int) times); :} 
+               | DIV:div              {: RESULT = new Objeto("div", "arithmetic", "/" , (int) div); :} 
+               | DIVEXTENSION:divext  {: RESULT = new Objeto("divext", "arithmetic", "div" , (int) divext); :} 
+               | MOD:mod              {: RESULT = new Objeto("mod", "arithmetic", "mod" , (int) mod); :}
+               ;
+
+string ::= string_character:strch {: if (strch != null) { RESULT = strch.toString(); } :}
+         ;
+
+letter ::= LETTER
+         ;
+
+sign ::= PLUS:plus   {: RESULT = new Objeto("plus", "arithmetic", "+" , (int) plus); :} 
+       | MINUS:minus {: RESULT = new Objeto("minus", "arithmetic", "-" , (int) minus); :}
+       ;
+
+sign_opt ::= sign:s {: if (s != null) { RESULT = s; }  :} 
+           | 
+           ;
+
+true ::= TRUE
+       ;
+
+false ::= FALSE
+        ;
+
+string_character ::= STRINGCHARACTER:strter {: if (strter != null) { RESULT = strter.toString();} :}
+                   ;
+
+identifier ::= IDENTIFIER:id {: System.out.println("IDENTIFIER: "+id); if (id != null) { RESULT = id.toString(); } :}
+             ;
+
+
+/*
+
+num_op ::= PLUS             {: RESULT = new PlusOperator(); :}
+         | MINUS            {: RESULT = new MinusOperator(); :}
+         | TIMES            {: RESULT = new TimesOperator(); :}
+         | DIV              {: RESULT = new DivideOperator(); :}
+         | MOD              {: RESULT = new ModeOperator(); :}
+         ;
+
+expr2 ::= IDENTIFIER:i            {: RESULT = new ID(i); :}
+            |num_expr:e     {: RESULT = e; :}
+            |str_expr:e     {: RESULT = e; :}
+            ;
+
+num_expr ::=  NUM:e
+                {:
+                    RESULT = new IntExpression(e.intValue());
+                :}
+            | MINUS expr:e
+                {:
+                    RESULT = new UMinusExpression(e);
+                :}
+            | LPARENT expr:e RPARENT
+                {:
+                    RESULT = new PIntExpression(e);
+                :}
+            | expr:e num_op:o expr:e2
+                {:
+                    RESULT = new OperatorExpression(e, o, e2);
+                :}
+            ;
+
+num_rel ::=   EQ         {: RESULT = new EqCond(); :}
+            | LT         {: RESULT = new LtCond(); :}
+            | LE         {: RESULT = new LeCond(); :}
+            | GT         {: RESULT = new GtCond(); :}
+            | GE         {: RESULT = new GeCond(); :}
+            | NE         {: RESULT = new NeCond(); :}
+            ;
+
+
+bool_expr ::= TRUE                               {: RESULT = new BooleanExpression(true); :}
+            | FALSE                              {: RESULT = new BooleanExpression(false); :}
+            | LPARENT bool_expr:e RPARENT          {: RESULT = new PBooleanExpression(e); :}
+            | NOT bool_expr:e                    {: RESULT = new NegationBooleanExpression(e); :}
+            | bool_expr:e AND bool_expr:e2       {: RESULT = new AndBooleanExpression(e, e2); :}
+            | bool_expr:e OR bool_expr:e2        {: RESULT = new OrBooleanExpression(e, e2); :}
+            | expr: e num_rel:o expr:e2          {: RESULT = new ConditionBooleanExpression(e, o, e2); :}
+            | expr:s str_rel:o expr:s2           {: RESULT = new ConditionBooleanExpression(s, o, s2); :}
+            ;
+
+simple_instr ::= assign_stat:si                  {: RESULT = si; :}
+              | if_stat:si                       {: RESULT = si; :}
+              | while_stat:si                    {: RESULT = si; :}
+              | BEGIN instr:si END               {: RESULT = new BeginEndInstruction(si); :}
+              | BEGIN instr:si END DOT           {: RESULT = new BeginEndInstruction(si); :}
+              | output_stat:si                   {: RESULT = si; :}
+              | EXIT                             {: System.exit(0); :}
+              ;
+
+instr ::= instr:i SEMI simple_instr:si           {: i.add(si); RESULT = i; :}
+        | simple_instr:si                        {: RESULT = new InstructionList(si); :}
+        ;
+
+assign_stat ::= IDENTIFIER:i ASSIGN expr:e          {: RESULT = new AssignInstruction(i,e); :}
+                ;
+
+if_stat ::= IF bool_expr:c THEN simple_instr:s                          {: RESULT = new IfInstruction(c, s); :}
+            | IF bool_expr:c THEN simple_instr:s ELSE simple_instr:s2   {:  RESULT = new IfElseInstruction(c, s, s2); :}
+            ;
+
+while_stat ::= WHILE bool_expr:c DO simple_instr:s       {: RESULT = new WhileInstruction(c, s); :}
+            | DO simple_instr:s WHILE bool_expr:c        {: RESULT = new DoWhileInstruction(c, s); :}
+            ;
+     */

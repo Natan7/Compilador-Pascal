@@ -1,0 +1,15 @@
+program test;
+
+var x : number;
+var y : number;
+
+type
+	TMember = record
+		firstname, surname : string;
+		phone: string;
+		paidCurrentSubscription: boolean
+	end;
+begin
+    x := 10;
+    y := 11;
+end.

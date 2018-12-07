@@ -14,7 +14,7 @@ parser code {:
 init with {:
   ComplexSymbolFactory f = new ComplexSymbolFactory();
   symbolFactory = f;
-  File file = new File("input.pas");
+  File file = new File("input.txt");
   FileInputStream fis = null;
   try {
     fis = new FileInputStream(file);
